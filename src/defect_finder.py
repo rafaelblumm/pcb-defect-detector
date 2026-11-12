@@ -13,6 +13,12 @@ class PCBDefectFinder:
     """ Identificador de defeitos em PCBs """
 
     def __init__(self, cfg: DefectFinderConfigs):
+        """
+        Cria novo identificador de defeitos
+
+        Args:
+            cfg: Configurações da etapa de identificação de defeitos
+        """
         self.cfg = cfg
 
 
@@ -21,6 +27,17 @@ class PCBDefectFinder:
         reference_img: np.ndarray,
         target_img: np.ndarray
     ) -> List[str]:
+        """
+        Localiza defeitos comparando a imagem alvo com a imagem referência e
+        grava as imagens de resultado no diretório de saída
+
+        Args:
+            reference_img: Imagem referência em escala de cinza
+            target_img: Imagem alvo alinhada em escala de cinza
+
+        Returns:
+            Lista de defeitos identificados
+        """
         diff = self._diff(reference_img, target_img)
         threshold = self._threshold(diff)
         defects = self._analyze_components(threshold)
@@ -44,6 +61,16 @@ class PCBDefectFinder:
         reference_img: np.ndarray,
         target_img: np.ndarray
     ) -> np.ndarray:
+        """
+        Calcula diferença entre imagens
+
+        Args:
+            reference_img: Imagem referência
+            target_img: Imagem alvo
+
+        Returns:
+            Imagem de diferença em uint8
+        """
         diff = cv2.absdiff(
             reference_img.astype(float),
             target_img.astype(float)
@@ -55,6 +82,17 @@ class PCBDefectFinder:
 
 
     def _threshold(self, diff: np.ndarray) -> np.ndarray:
+        """
+        Limiariza imagem de diferença com algoritmo de limiar te Otsu e aplica
+        operações morfológicas em pixels adjacentes de abertura e fechamento
+        para remover ruídos
+
+        Args:
+            diff: Imagem de diferença
+
+        Returns:
+            Imagem binarizada
+        """
         _, binary = cv2.threshold(
             diff,
             0,
@@ -100,6 +138,16 @@ class PCBDefectFinder:
 
 
     def _build_defect(self, contour, area: float) -> Defect:
+        """
+        Cria `Defect` a partir de um contorno de defeito
+
+        Args:
+            contour: Contorno do defeito
+            area: Área do contorno (pixels quadrados)
+
+        Returns:
+            Dados do defeito
+        """
         box = self._bounding_box(contour)
         centroid = self._centroid(contour, box)
 
@@ -113,11 +161,31 @@ class PCBDefectFinder:
 
 
     def _bounding_box(self, contour) -> DefectBox:
+        """
+        Calcula dimensões da caixa delimitadora do contorno
+
+        Args:
+            contour: Contorno do defeito
+
+        Returns:
+            Caixa delimitadora do defeito
+        """
         x, y, w, h = cv2.boundingRect(contour)
         return DefectBox(x=x, y=y, width=w, height=h)
 
 
     def _centroid(self, contour, box: DefectBox) -> tuple[float, float]:
+        """
+        Calcula a centróide do contorno a partir dos momentos da imagem. Se a
+        área for zero, usa o centro da caixa delimitadora
+
+        Args:
+            contour: Contorno do defeito
+            box: Caixa delimitadora do defeito
+
+        Returns:
+            Tupla de (x, y) da centróide em pixels
+        """
         moments = cv2.moments(contour)
         if moments["m00"] == 0:
             return (
@@ -132,6 +200,16 @@ class PCBDefectFinder:
 
 
     def _circularity(self, contour, area: float) -> float:
+        """
+        Calcula a circularidade do defeito
+
+        Args:
+            contour: Contorno do defeito
+            area: Área do contorno (pixels quadrados)
+
+        Returns:
+            Circularidade entre 0 e 1, ou 0.0 se o perímetro for zero
+        """
         perimeter = cv2.arcLength(contour, True)
         if perimeter > 0:
             return 4 * np.pi * area / (perimeter ** 2)
@@ -146,6 +224,18 @@ class PCBDefectFinder:
         reference: np.ndarray,
         defects: List[Defect]
     ):
+        """
+        Grava as imagens de resultado:
+        - Registrada
+        - Diferença
+        - Defeitos marcados
+
+        Args:
+            output_dir: Diretório onde as imagens serão gravadas
+            target_registered: Imagem alvo alinhada
+            reference: Imagem referência
+            defects: Defeitos a serem marcados na imagem
+        """
         print("Gravando resultados")
         output_dir.mkdir(parents=True, exist_ok=True)
 

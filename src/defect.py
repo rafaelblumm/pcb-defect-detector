@@ -18,6 +18,7 @@ class Defect:
 
 @dataclass
 class DefectBox:
+    """ Caixa delimitadora (bounding box) de um defeito """
     x: int
     """ Coordenada X do topo (pixels) """
     y: int
