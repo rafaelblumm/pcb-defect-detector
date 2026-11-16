@@ -1,5 +1,3 @@
-import os
-from pathlib import Path
 from typing import List
 
 import cv2
@@ -7,7 +5,7 @@ import numpy as np
 
 from config import DefectFinderConfigs
 from defect import Defect, DefectBox
-from utils import save_image
+
 
 class PCBDefectFinder:
     """ Identificador de defeitos em PCBs """
@@ -20,40 +18,31 @@ class PCBDefectFinder:
             cfg: Configurações da etapa de identificação de defeitos
         """
         self.cfg = cfg
+        self.images = {}
 
 
     def locate_defects(
         self,
         reference_img: np.ndarray,
         target_img: np.ndarray
-    ) -> List[str]:
+    ) -> List[Defect]:
         """
-        Localiza defeitos comparando a imagem alvo com a imagem referência e
-        grava as imagens de resultado no diretório de saída
+        Localiza defeitos comparando a imagem alvo com a imagem referência
 
         Args:
             reference_img: Imagem referência em escala de cinza
             target_img: Imagem alvo alinhada em escala de cinza
 
         Returns:
-            Lista de defeitos identificados
+            Lista de defeitos identificados, ainda sem categoria
         """
         diff = self._diff(reference_img, target_img)
-        threshold = self._threshold(diff)
-        defects = self._analyze_components(threshold)
-        output_dir = Path(
-            os.path.dirname(os.path.realpath(__file__)),
-            "..",
-            "output"
-        )
-        self.save_images(
-            output_dir,
-            target_img,
-            reference_img,
-            defects
-        )
+        self.images["diff"] = diff.copy()
 
-        return defects
+        threshold = self._threshold(diff)
+        self.images["threshold"] = threshold.copy()
+
+        return self._analyze_components(threshold)
 
 
     def _diff(
@@ -156,7 +145,8 @@ class PCBDefectFinder:
             area=area,
             centroid_x=centroid[0],
             centroid_y=centroid[1],
-            circularity=self._circularity(contour, area)
+            circularity=self._circularity(contour, area),
+            contour=contour
         )
 
 
@@ -215,57 +205,3 @@ class PCBDefectFinder:
             return 4 * np.pi * area / (perimeter ** 2)
 
         return 0.0
-
-
-    def save_images(
-        self,
-        output_dir: Path,
-        target_registered: np.ndarray,
-        reference: np.ndarray,
-        defects: List[Defect]
-    ):
-        """
-        Grava as imagens de resultado:
-        - Registrada
-        - Diferença
-        - Defeitos marcados
-
-        Args:
-            output_dir: Diretório onde as imagens serão gravadas
-            target_registered: Imagem alvo alinhada
-            reference: Imagem referência
-            defects: Defeitos a serem marcados na imagem
-        """
-        print("Gravando resultados")
-        output_dir.mkdir(parents=True, exist_ok=True)
-
-        reg_path = output_dir / "registered.png"
-        save_image(target_registered, str(reg_path))
-        print(f"  Imagem registrada: {reg_path}")
-
-        ref_gray = cv2.cvtColor(reference, cv2.COLOR_BGR2GRAY) if len(reference.shape) == 3 else reference
-        tgt_gray = cv2.cvtColor(target_registered, cv2.COLOR_BGR2GRAY) if len(target_registered.shape) == 3 else target_registered
-        diff = cv2.absdiff(ref_gray.astype(float), tgt_gray.astype(float))
-        diff = (diff * 255.0 / (diff.max() + 1e-8)).astype(np.uint8)
-        diff_path = output_dir / "difference.png"
-        print(f"  Imagem com diferença: {diff_path}")
-        save_image(diff, str(diff_path))
-
-        if len(target_registered.shape) == 2:
-            target_rgb = cv2.cvtColor(target_registered, cv2.COLOR_GRAY2BGR)
-        else:
-            target_rgb = target_registered.copy()
-
-        defects_img = target_rgb.copy()
-        for defect in defects:
-            box = defect.box
-            cv2.rectangle(
-                defects_img,
-                (box.x, box.y),
-                (box.x + box.width, box.y + box.height),
-                (0, 0, 255),
-                2
-            )
-        defects_path = output_dir / "defects.png"
-        save_image(defects_img, str(defects_path))
-        print(f"  Imagem com defeitos: {defects_path}")
