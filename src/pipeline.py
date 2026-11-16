@@ -6,9 +6,14 @@ from pathlib import Path
 
 from config import PCBDetectionPipelineConfigs
 from defect import Defect
+from defect_classifier import DefectClassifier
 from defect_finder import PCBDefectFinder
 from image_registration import ImageRegistrator, apply_transformation
+from result_writer import ResultWriter
 from utils import load_image, to_gray
+
+OUTPUT_DIR = Path(__file__).resolve().parent.parent / "output"
+""" Diretório onde as imagens de resultado são gravadas """
 
 
 class PCBDetectionPipeline:
@@ -33,8 +38,9 @@ class PCBDetectionPipeline:
         1. Carrega imagens
         2. Transforma imagens em escala de cinza
         3. Alinha imagens
-        4. Calcula mapa de diferenças
-        5. Indica ocorrências de defeitos na imagem de teste
+        4. Calcula mapa de diferenças e identifica defeitos
+        5. Categoriza os defeitos e mantém apenas as categorias de interesse
+        6. Indica ocorrências de defeitos na imagem de teste
 
         Args:
             reference_path: Caminho da imagem matriz (referência)
@@ -45,7 +51,20 @@ class PCBDetectionPipeline:
             target_path
         )
         registered_image = self._register_images(ref, target)
-        defects = self._identify_defects(ref, registered_image)
+        defects, diff, threshold = self._identify_defects(ref, registered_image)
+        classified_defects = self._classify_defects(
+            ref,
+            registered_image,
+            defects
+        )
+        ResultWriter(OUTPUT_DIR).save_images(
+            registered_image,
+            ref,
+            diff,
+            threshold,
+            defects,
+            classified_defects
+        )
         print("Processo finalizado")
 
 
@@ -123,10 +142,41 @@ class PCBDetectionPipeline:
             Lista de defeitos identificados
         """
         print("Buscando defeitos")
-        defects = PCBDefectFinder(self.cfg.defect).locate_defects(
+        defect_finder = PCBDefectFinder(self.cfg.defect)
+        defects = defect_finder.locate_defects(
             reference_img,
             target_img
         )
-        print(f"Identificados {len(defects)} defeitos")
+        print(f"  Identificados {len(defects)} defeitos")
 
-        return defects
+        return (
+            defects,
+            defect_finder.images["diff"],
+            defect_finder.images["threshold"]
+        )
+
+
+    def _classify_defects(
+        self,
+        reference_img: np.ndarray,
+        target_img: np.ndarray,
+        defects: List[Defect]
+    ) -> List[Defect]:
+        """
+        Categoriza os defeitos e mantém apenas as categorias de interesse
+
+        Args:
+            reference_img: Imagem referência em escala de cinza
+            target_img: Imagem alvo alinhada em escala de cinza
+            defects: Defeitos identificados
+
+        Returns:
+            Lista de defeitos nas categorias de interesse
+        """
+        print("Categorizando defeitos")
+        classifier = DefectClassifier(self.cfg.classifier)
+        classifier.classify(defects, reference_img, target_img)
+        kept = classifier.filter(defects)
+        print(f"  Mantidos {len(kept)} de {len(defects)} defeitos")
+
+        return kept
