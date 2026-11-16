@@ -3,6 +3,7 @@ from pathlib import Path
 from IPython.display import display, display_markdown, Image
 import numpy as np
 
+from config import PCBDetectionPipelineConfigs
 from pipeline import PCBDetectionPipeline
 import result_writer
 from utils import load_image_from_url
@@ -45,7 +46,8 @@ def download_image_set(group: str, img_id: str) -> (np.ndarray):
 def run_pipeline(
     group_id: str,
     img_id: str,
-    from_local_fs: bool = True
+    from_local_fs: bool = True,
+    cfg: PCBDetectionPipelineConfigs = PCBDetectionPipelineConfigs()
 ) -> result_writer.ResultSet:
     """
     Executa o pipeline
@@ -58,7 +60,7 @@ def run_pipeline(
     Return:
         Imagens resultantes do pipeline
     """
-    pipeline = PCBDetectionPipeline()
+    pipeline = PCBDetectionPipeline(cfg)
 
     if not from_local_fs:
         ref, target = download_image_set(group_id, img_id)

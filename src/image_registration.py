@@ -1,13 +1,16 @@
 import cv2
 import numpy as np
 
-from config import ImageRegistrationConfig
+from config import ImageRegistrationConfig, RegistrationAlgorithm
 
 
 class ImageRegistrator:
     """
-    Realiza registro translacional por busca local utiliando algoritmo de
-    soma da diferença dos quadrados (SSD - Sum of Squared Differences)
+    Realiza registro translacional utilizando o algoritmo configurado:
+    - SSD: busca local por soma da diferença dos quadrados (Sum of Squared
+      Differences)
+    - FFT_CROSS_CORRELATION: correlação cruzada calculada via Transformada
+      Rápida de Fourier
     """
 
     def __init__(self, cfg: ImageRegistrationConfig):
@@ -34,12 +37,36 @@ class ImageRegistrator:
 
         Returns:
             Tupla de (dx, dy, metric): Deslocamento horizontal, deslocamento
-            vertical e métrica de diferença entre imagens
+            vertical e métrica
         """
         if reference_img.shape != target_img.shape:
-            raise "Imagem de referência e imagem alvo possuem tamanhos " \
-                  "diferentes"
+            raise ValueError(
+                "Imagem de referência e imagem alvo possuem tamanhos "
+                "diferentes"
+            )
 
+        algorithm = RegistrationAlgorithm(self.cfg.algorithm)
+        if algorithm is RegistrationAlgorithm.FFT_CROSS_CORRELATION:
+            return self._register_fft(reference_img, target_img)
+
+        return self._register_ssd(reference_img, target_img)
+
+
+    def _register_ssd(
+        self,
+        reference_img: np.ndarray,
+        target_img: np.ndarray
+    ):
+        """
+        Registro por busca local exaustiva com métrica SSD
+
+        Args:
+            reference_img: Imagem referência
+            target_img: Imagem alvo
+
+        Returns:
+            Tupla de (dx, dy, ssd)
+        """
         radius = self.cfg.radius
         displacements = [
             (dx, dy)
@@ -62,6 +89,85 @@ class ImageRegistrator:
                 best_displacement = (dx, dy)
 
         return best_displacement[0], best_displacement[1], best_metric
+
+
+    def _register_fft(
+        self,
+        reference_img: np.ndarray,
+        target_img: np.ndarray
+    ):
+        """
+        Registro por correlação cruzada calculada no domínio da frequência.
+        As imagens são preenchidas com zeros para que a correlação seja linear
+        (sem sobreposição circular). Para cada deslocamento dentro do raio
+        configurado, a correlação é normalizada (ZNCC) apenas pela região de
+        sobreposição, evitando favorecer deslocamentos pequenos, que têm mais
+        área em comum. O pico define o deslocamento.
+
+        Args:
+            reference_img: Imagem referência
+            target_img: Imagem alvo
+
+        Returns:
+            Tupla de (dx, dy, zncc), onde zncc é a correlação cruzada
+            normalizada e centrada no pico, entre -1 e 1
+        """
+        height, width = reference_img.shape
+        # Mantém ao menos metade da imagem sobreposta em cada eixo
+        radius = min(self.cfg.radius, height // 2, width // 2)
+
+        ref = reference_img.astype(np.float64)
+        tgt = target_img.astype(np.float64)
+        ones = np.ones_like(ref)
+
+        # Preenchimento suficiente para evitar sobreposição circular nos
+        # deslocamentos até o raio
+        fft_shape = (height + radius, width + radius)
+        offsets = np.arange(-radius, radius + 1)
+        rows = offsets % fft_shape[0]
+        cols = offsets % fft_shape[1]
+
+        def rfft(img: np.ndarray) -> np.ndarray:
+            return np.fft.rfft2(img, s=fft_shape)
+
+        def correlate(a_fft: np.ndarray, b_fft: np.ndarray) -> np.ndarray:
+            # out[dy, dx] = sum(a[y + dy, x + dx] * b[y, x]); deslocamentos
+            # negativos ficam no final de cada eixo
+            out = np.fft.irfft2(a_fft * np.conj(b_fft), s=fft_shape)
+            return out[np.ix_(rows, cols)]
+
+        ref_fft, tgt_fft, ones_fft = rfft(ref), rfft(tgt), rfft(ones)
+
+        # Somas sobre a região de sobreposição de cada deslocamento
+        count = correlate(ones_fft, ones_fft)
+        sum_ref = correlate(ref_fft, ones_fft)
+        sum_tgt = correlate(ones_fft, tgt_fft)
+        sum_ref_sq = correlate(rfft(ref ** 2), ones_fft)
+        sum_tgt_sq = correlate(ones_fft, rfft(tgt ** 2))
+        sum_cross = correlate(ref_fft, tgt_fft)
+
+        count = np.maximum(np.round(count), 1)
+        cov = sum_cross - sum_ref * sum_tgt / count
+        var_ref = sum_ref_sq - sum_ref ** 2 / count
+        var_tgt = sum_tgt_sq - sum_tgt ** 2 / count
+
+        # Variâncias muito pequenas (regiões uniformes) não têm correlação
+        # confiável
+        denom = np.sqrt(np.clip(var_ref, 0, None) * np.clip(var_tgt, 0, None))
+        valid = denom > 1e-6 * count
+        zncc = np.full(cov.shape, -np.inf)
+        zncc[valid] = cov[valid] / denom[valid]
+
+        if not valid.any():
+            return 0, 0, 0.0
+
+        peak_y, peak_x = np.unravel_index(np.argmax(zncc), zncc.shape)
+
+        return (
+            int(offsets[peak_x]),
+            int(offsets[peak_y]),
+            float(zncc[peak_y, peak_x])
+        )
 
 
     def _compute_ssd_metric(

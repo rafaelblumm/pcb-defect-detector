@@ -6,7 +6,7 @@ import numpy as np
 
 from pathlib import Path
 
-from config import PCBDetectionPipelineConfigs
+from config import PCBDetectionPipelineConfigs, RegistrationAlgorithm
 from defect import Defect
 from defect_classifier import DefectClassifier
 from defect_finder import PCBDefectFinder
@@ -178,7 +178,13 @@ class PCBDetectionPipeline:
         Returns:
             Imagem alvo alinhada com a referência
         """
-        print(f"Realizando registro translacional por busca local com SSD")
+        algorithm = RegistrationAlgorithm(self.cfg.registration.algorithm)
+        description = {
+            RegistrationAlgorithm.SSD: "busca local com SSD",
+            RegistrationAlgorithm.FFT_CROSS_CORRELATION:
+                "correlação cruzada via FFT",
+        }[algorithm]
+        print(f"Realizando registro translacional por {description}")
         dx, dy, metric = ImageRegistrator(self.cfg.registration).register(
             reference_img,
             target_img
