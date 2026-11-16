@@ -1,3 +1,4 @@
+from dataclasses import dataclass
 from pathlib import Path
 from typing import List
 
@@ -6,6 +7,23 @@ import numpy as np
 
 from defect import Defect
 from utils import save_image
+
+
+@dataclass
+class ResultSet:
+    """ Imagens resultantes do pipeline de processamento """
+    ref_path: Path
+    """ Imagem referência """
+    registered_path: Path
+    """ Imagem registrada """
+    diff_path: Path
+    """ Imagem de diferença """
+    threshold_path: Path
+    """ Imagem de limiar """
+    defects_path: Path
+    """ Imagem com defeitos identificados """
+    mousebite_path: Path
+    """ Imagem com defeitos mousebite identificados """
 
 
 class ResultWriter:
@@ -23,13 +41,13 @@ class ResultWriter:
 
     def save_images(
         self,
+        ref,
         target_registered: np.ndarray,
-        reference: np.ndarray,
         diff: np.ndarray,
         threshold: np.ndarray,
         defects: List[Defect],
         classified_defects: List[Defect]
-    ):
+    ) -> ResultSet:
         """
         Grava as imagens de resultado:
         - Registrada
@@ -43,6 +61,10 @@ class ResultWriter:
         """
         print("Gravando resultados")
         self.output_dir.mkdir(parents=True, exist_ok=True)
+
+        ref_path = self.output_dir / "reference.png"
+        save_image(ref, str(ref_path))
+        print(f"  Imagem matriz: {ref_path}")
 
         reg_path = self.output_dir / "registered.png"
         save_image(target_registered, str(reg_path))
@@ -80,6 +102,15 @@ class ResultWriter:
         classified_path = self.output_dir / "classified_defects.png"
         save_image(classified_img, str(classified_path))
         print(f"  Imagem com defeitos classificados: {classified_path}")
+
+        return ResultSet(
+            ref_path=ref_path,
+            registered_path=reg_path,
+            diff_path=diff_path,
+            threshold_path=threshold_path,
+            defects_path=defects_path,
+            mousebite_path=classified_path
+        )
 
 
     @staticmethod
