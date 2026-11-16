@@ -1,6 +1,6 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
-from typing import List
+from typing import Dict, List
 
 import cv2
 import numpy as np
@@ -24,6 +24,8 @@ class ResultSet:
     """ Imagem com defeitos identificados """
     mousebite_path: Path
     """ Imagem com defeitos mousebite identificados """
+    timings: Dict[str, float] = field(default_factory=dict)
+    """ Tempo de execução (segundos) de cada etapa do pipeline em ordem """
 
 
 class ResultWriter:
