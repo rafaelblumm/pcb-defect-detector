@@ -1,15 +1,26 @@
 from dataclasses import dataclass, field
+from enum import Enum
 from typing import Optional
+
+
+class RegistrationAlgorithm(str, Enum):
+    """ Algoritmos disponíveis para registro translacional das imagens """
+    SSD = "ssd"
+    """ Busca local pela soma da diferença dos quadrados """
+    FFT_CROSS_CORRELATION = "fft_cross_correlation"
+    """ Correlação cruzada calculada via algoritmo Fast Fourier Transform """
 
 
 @dataclass
 class ImageRegistrationConfig:
     """ Configurações da etapa de registro translacional das imagens """
+    algorithm: RegistrationAlgorithm = RegistrationAlgorithm.SSD
+    """ Algoritmo utilizado no registro """
     radius: int = 50
     """ Deslocamento máximo da busca """
     step: int = 1
     """ Pulos na sequência de pixels. Quanto maior, mais performance e menos
-        precisão """
+        precisão. Utilizado apenas pelo algoritmo SSD """
 
 
 @dataclass
