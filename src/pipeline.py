@@ -1,4 +1,6 @@
-from typing import List
+from contextlib import contextmanager
+from time import perf_counter
+from typing import Dict, Iterator, List
 
 import numpy as np
 
@@ -47,11 +49,13 @@ class PCBDetectionPipeline:
         Returns:
             Imagens resultantes do pipeline
         """
-        ref, target = self._load_images(
-            reference_path,
-            target_path
-        )
-        return self.process(ref, target)
+        timings: Dict[str, float] = {}
+        with self._timed(timings, "Carregamento e escala de cinza"):
+            ref, target = self._load_images(
+                reference_path,
+                target_path
+            )
+        return self._run(ref, target, timings)
 
 
     def process(self, ref: np.ndarray, target: np.ndarray) -> ResultSet:
@@ -68,26 +72,66 @@ class PCBDetectionPipeline:
             target: Imagem resultado
 
         Returns:
-            Imagens resultantes do pipeline
+            Imagens resultantes do pipeline, com o tempo de cada etapa
         """
-        registered_image = self._register_images(ref, target)
-        defects, diff, threshold = self._identify_defects(ref, registered_image)
-        classified_defects = self._classify_defects(
-            ref,
-            registered_image,
-            defects
-        )
-        result_set = ResultWriter(OUTPUT_DIR).save_images(
-            ref,
-            registered_image,
-            diff,
-            threshold,
-            defects,
-            classified_defects
-        )
+        return self._run(ref, target, {})
+
+
+    def _run(
+        self,
+        ref: np.ndarray,
+        target: np.ndarray,
+        timings: Dict[str, float]
+    ) -> ResultSet:
+        """
+        Executa as etapas do pipeline, registrando o tempo de cada uma
+
+        Args:
+            ref: Imagem matriz
+            target: Imagem resultado
+            timings: Tempos (em segundos) de etapas já executadas. É
+                complementado com as etapas executadas aqui
+
+        Returns:
+            Imagens resultantes do pipeline, com o tempo de cada etapa
+        """
+        with self._timed(timings, "Registro de imagens"):
+            registered_image = self._register_images(ref, target)
+        with self._timed(timings, "Identificação de defeitos"):
+            defects, diff, threshold = self._identify_defects(
+                ref,
+                registered_image
+            )
+        with self._timed(timings, "Classificação de defeitos"):
+            classified_defects = self._classify_defects(
+                ref,
+                registered_image,
+                defects
+            )
+        with self._timed(timings, "Gravação de resultados"):
+            result_set = ResultWriter(OUTPUT_DIR).save_images(
+                ref,
+                registered_image,
+                diff,
+                threshold,
+                defects,
+                classified_defects
+            )
+        result_set.timings = timings
         print("Processo finalizado")
 
         return result_set
+
+
+    @staticmethod
+    @contextmanager
+    def _timed(timings: Dict[str, float], stage: str) -> Iterator[None]:
+        """ Registra em `timings` o tempo de execução, em segundos, da etapa """
+        start = perf_counter()
+        try:
+            yield
+        finally:
+            timings[stage] = perf_counter() - start
 
 
     def _load_images(
