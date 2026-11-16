@@ -9,7 +9,7 @@ from defect import Defect
 from defect_classifier import DefectClassifier
 from defect_finder import PCBDefectFinder
 from image_registration import ImageRegistrator, apply_transformation
-from result_writer import ResultWriter
+from result_writer import ResultSet, ResultWriter
 from utils import load_image, to_gray
 
 OUTPUT_DIR = Path(__file__).resolve().parent.parent / "output"
@@ -32,24 +32,44 @@ class PCBDetectionPipeline:
         self.cfg = cfg
 
 
-    def process(self, reference_path: Path, target_path: Path):
+    def load_and_process(
+        self,
+        reference_path: Path,
+        target_path: Path
+    ) -> ResultSet:
         """
-        Executa o pipeline completo:
-        1. Carrega imagens
-        2. Transforma imagens em escala de cinza
-        3. Alinha imagens
-        4. Calcula mapa de diferenças e identifica defeitos
-        5. Categoriza os defeitos e mantém apenas as categorias de interesse
-        6. Indica ocorrências de defeitos na imagem de teste
+        Carrega imagens de arquivos e executa o pipeline completo
 
         Args:
-            reference_path: Caminho da imagem matriz (referência)
-            target_path: Caminho da imagem resultado (alvo)
+            reference_path: Caminho da imagem matriz
+            target_path: Caminho da imagem resultado
+
+        Returns:
+            Imagens resultantes do pipeline
         """
         ref, target = self._load_images(
             reference_path,
             target_path
         )
+        return self.process(ref, target)
+
+
+    def process(self, ref: np.ndarray, target: np.ndarray) -> ResultSet:
+        """
+        Executa o pipeline completo:
+        1. Transforma imagens em escala de cinza
+        2. Alinha imagens
+        3. Calcula mapa de diferenças e identifica defeitos
+        4. Categoriza os defeitos e mantém apenas as categorias de interesse
+        5. Indica ocorrências de defeitos na imagem de teste
+
+        Args:
+            ref: Imagem matriz
+            target: Imagem resultado
+
+        Returns:
+            Imagens resultantes do pipeline
+        """
         registered_image = self._register_images(ref, target)
         defects, diff, threshold = self._identify_defects(ref, registered_image)
         classified_defects = self._classify_defects(
@@ -57,15 +77,17 @@ class PCBDetectionPipeline:
             registered_image,
             defects
         )
-        ResultWriter(OUTPUT_DIR).save_images(
-            registered_image,
+        result_set = ResultWriter(OUTPUT_DIR).save_images(
             ref,
+            registered_image,
             diff,
             threshold,
             defects,
             classified_defects
         )
         print("Processo finalizado")
+
+        return result_set
 
 
     def _load_images(
