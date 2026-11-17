@@ -1,12 +1,16 @@
 from pathlib import Path
+from statistics import median
+from time import perf_counter
+from typing import Optional
 
 from IPython.display import display, display_markdown, Image
 import numpy as np
 
 from pcb_defect_detector import result_writer
-from pcb_defect_detector.config import PCBDetectionPipelineConfigs
+from pcb_defect_detector.config import ImageRegistrationConfig, PCBDetectionPipelineConfigs, RegistrationAlgorithm
+from pcb_defect_detector.image_registration import ImageRegistrator
 from pcb_defect_detector.pipeline import PCBDetectionPipeline
-from pcb_defect_detector.utils import load_image_from_url
+from pcb_defect_detector.utils import load_image, load_image_from_url, to_gray
 
 
 _IMAGE_REPOSITORY_URL = (
@@ -14,10 +18,6 @@ _IMAGE_REPOSITORY_URL = (
     "08e98c4db5922613fb97176eb3d6497d48260cb1/PCBData/"
 )
 """ URL do repositório de imagens de PCBs """
-
-# LOCAL_REPOSITORY_PATH = Path("/path/to/repo/DeepPCB/PCBData")
-LOCAL_REPOSITORY_PATH = Path("/home/blumm/Documents/dev/DeepPCB/PCBData")
-""" Caminho do repositório local de imagens """
 
 
 def download_image_set(group: str, img_id: str) -> (np.ndarray):
@@ -46,7 +46,7 @@ def download_image_set(group: str, img_id: str) -> (np.ndarray):
 def run_pipeline(
     group_id: str,
     img_id: str,
-    from_local_fs: bool = True,
+    local_images_repo: Optional[Path],
     cfg: PCBDetectionPipelineConfigs = PCBDetectionPipelineConfigs()
 ) -> result_writer.ResultSet:
     """
@@ -55,24 +55,44 @@ def run_pipeline(
     Args:
         group: ID do grupo de imagens
         img_id: ID da imagem
-        from_local_fs: Se usa imagens do repositório local. Se falso, faz
-            download do repositório remoto
+        local_images_repo: Caminho das imagens do repositório local. Se não
+            informado, faz download do repositório remoto
     Return:
         Imagens resultantes do pipeline
     """
     pipeline = PCBDetectionPipeline(cfg)
 
-    if not from_local_fs:
+    if local_images_repo is None:
         ref, target = download_image_set(group_id, img_id)
         return pipeline.process(ref, target)
 
-    base = Path(LOCAL_REPOSITORY_PATH, f"group{group_id}", group_id)
-    ref = Path(base, f"{img_id}_temp.jpg")
-    target = Path(base, f"{img_id}_test.jpg")
+    ref, target = resolve_image_paths(local_images_repo, group_id, img_id)
     return pipeline.load_and_process(ref, target)
 
 
-def display_results(rs: result_writer.ResultSet, only_timings: bool = False):
+def resolve_image_paths(
+    local_images_repo: Path,
+    group_id: str,
+    img_id: str,
+) -> tuple[Path, Path]:
+    """
+    Resolve caminho das imagens de teste
+
+    Args:
+        local_images_repo: Caminho das imagens do repositório local
+        group: ID do grupo de imagens
+        img_id: ID da imagem
+    Returns:
+        Tupla com caminho da imagem matriz e imagem de teste
+    """
+    base = Path(local_images_repo, f"group{group_id}", group_id)
+    ref = Path(base, f"{img_id}_temp.jpg")
+    target = Path(base, f"{img_id}_test.jpg")
+
+    return (ref, target)
+
+
+def display_results(rs: result_writer.ResultSet):
     """
     Exibe resultado formatado da execução do pipeline
 
@@ -80,8 +100,20 @@ def display_results(rs: result_writer.ResultSet, only_timings: bool = False):
         rs: Resultados do pipeline
     """
     display_markdown("## Relatório de execução", raw=True)
+    _display_final_result(rs)
     _display_timings(rs)
     _display_result_set(rs)
+
+
+def _display_final_result(rs: result_writer.ResultSet):
+    """
+    Exibe resultado final do pipeline
+
+    Args:
+        rs: Resultados do pipeline
+    """
+    display_markdown(f"### Mousebites identificados", raw=True)
+    display(Image(filename=rs.mousebite_path))
 
 
 def _display_timings(rs: result_writer.ResultSet):
@@ -112,7 +144,7 @@ def _display_result_set(rs: result_writer.ResultSet):
     Args:
         rs: Resultados do pipeline
     """
-    display_markdown("### Resultado do pipeline", raw=True)
+    display_markdown("### Imagens geradas no pipeline", raw=True)
     fmt_results = [
         ("0. Imagem matriz", rs.ref_path),
         ("1. Imagem registrada", rs.registered_path),
@@ -125,3 +157,122 @@ def _display_result_set(rs: result_writer.ResultSet):
         display_markdown(f"#### {title}", raw=True)
         display(Image(filename=img_path))
 
+
+def run_reg_algorithm_comparison(
+    local_images_repo: Path,
+    group_id: str,
+    img_id: str,
+    repeats: int
+) -> dict:
+    ref_path, target_path = resolve_image_paths(
+        local_images_repo,
+        group_id,
+        img_id
+    )
+    ref = to_gray(load_image(ref_path))
+    target = to_gray(load_image(target_path))
+
+    registration_results = {}
+    for algorithm in RegistrationAlgorithm:
+        registrator = ImageRegistrator(
+            ImageRegistrationConfig(algorithm=algorithm)
+        )
+        times = []
+        for _ in range(repeats):
+            start = perf_counter()
+            dx, dy, metric = registrator.register(ref, target)
+            times.append(perf_counter() - start)
+
+        registration_results[algorithm] = {
+            "median": median(times),
+            "min": min(times),
+            "dx": dx,
+            "dy": dy,
+            "metric": metric,
+        }
+
+    return registration_results
+
+
+def display_reg_algorithm_comparison_table(registration_results: dict):
+    """
+    Exibe tabela com resultado da comparação entre algoritmos
+
+    Args:
+        registration_results: Resultados da execução
+    """
+    rows = [
+        "| Algoritmo | Mediana (s) | Mínimo (s) | dx | dy | Métrica |",
+        "|---|---:|---:|---:|---:|---:|",
+    ]
+    for algorithm, r in registration_results.items():
+        rows.append(
+            f"| {algorithm.value} | {r['median']:.3f} | {r['min']:.3f} | "
+            f"{r['dx']} | {r['dy']} | {r['metric']:.4f} |"
+        )
+
+    ssd_median = registration_results[RegistrationAlgorithm.SSD]["median"]
+    fft_median = registration_results[
+        RegistrationAlgorithm.FFT_CROSS_CORRELATION
+    ]["median"]
+    rows.append("")
+    rows.append(f"Razão de tempo SSD / FFT (mediana): **{ssd_median / fft_median:.2f}x**")
+
+    display_markdown("\n".join(rows), raw=True)
+
+
+def run_reg_algorithm_comparison_pipeline(
+    local_images_repo: Path,
+    group_id: str,
+    img_id: str,
+) -> dict:
+    """
+    Executa pipeline com dois algoritmos de registro translacional
+
+    Args:
+        local_images_repo: Caminho das imagens do repositório local
+        group: ID do grupo de imagens
+        img_id: ID da imagem
+    Returns:
+        Tupla com caminho da imagem matriz e imagem de teste
+    """
+    ref_path, target_path = resolve_image_paths(
+        local_images_repo,
+        group_id,
+        img_id
+    )
+    pipeline_timings = {}
+    for algorithm in RegistrationAlgorithm:
+        pipeline_cfg = PCBDetectionPipelineConfigs(
+            registration=ImageRegistrationConfig(algorithm=algorithm)
+        )
+        result_set = PCBDetectionPipeline(pipeline_cfg).load_and_process(
+            ref_path,
+            target_path
+        )
+        pipeline_timings[algorithm] = result_set.timings
+
+    return pipeline_timings
+
+
+def display_reg_algorithm_pipeline_comparison_table(pipeline_timings: dict):
+    """
+    Exibe tabela com resultado da comparação entre algoritmos com pipeline
+    completo
+
+    Args:
+        pipeline_timings: Resultados da execução
+    """
+    rows = [
+        "| Algoritmo | Registro (s) | Total (s) | % no registro |",
+        "|---|---:|---:|---:|",
+    ]
+    for algorithm, timings in pipeline_timings.items():
+        registration = timings["Registro de imagens"]
+        total = sum(timings.values())
+        rows.append(
+            f"| {algorithm.value} | {registration:.3f} | {total:.3f} | "
+            f"{100 * registration / total:.1f}% |"
+        )
+
+    display_markdown("\n".join(rows), raw=True)
