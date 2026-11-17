@@ -3,8 +3,8 @@ from typing import List
 import cv2
 import numpy as np
 
-from config import DefectClassifierConfigs
-from defect import Defect, DefectType
+from pcb_defect_detector.config import DefectClassifierConfigs
+from pcb_defect_detector.defect import Defect, DefectType
 
 MIN_RING_COMPONENT_AREA = 2
 """ Área mínima (pixels) de um componente do anel para ser contado """

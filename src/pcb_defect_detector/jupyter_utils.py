@@ -3,10 +3,10 @@ from pathlib import Path
 from IPython.display import display, display_markdown, Image
 import numpy as np
 
-from config import PCBDetectionPipelineConfigs
-from pipeline import PCBDetectionPipeline
-import result_writer
-from utils import load_image_from_url
+from pcb_defect_detector import result_writer
+from pcb_defect_detector.config import PCBDetectionPipelineConfigs
+from pcb_defect_detector.pipeline import PCBDetectionPipeline
+from pcb_defect_detector.utils import load_image_from_url
 
 
 _IMAGE_REPOSITORY_URL = (
@@ -72,7 +72,7 @@ def run_pipeline(
     return pipeline.load_and_process(ref, target)
 
 
-def display_results(rs: result_writer.ResultSet):
+def display_results(rs: result_writer.ResultSet, only_timings: bool = False):
     """
     Exibe resultado formatado da execução do pipeline
 

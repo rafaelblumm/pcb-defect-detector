@@ -5,8 +5,8 @@ from typing import Dict, List
 import cv2
 import numpy as np
 
-from defect import Defect
-from utils import save_image
+from pcb_defect_detector.defect import Defect
+from pcb_defect_detector.utils import save_image
 
 
 @dataclass

@@ -6,15 +6,21 @@ import numpy as np
 
 from pathlib import Path
 
-from config import PCBDetectionPipelineConfigs, RegistrationAlgorithm
-from defect import Defect
-from defect_classifier import DefectClassifier
-from defect_finder import PCBDefectFinder
-from image_registration import ImageRegistrator, apply_transformation
-from result_writer import ResultSet, ResultWriter
-from utils import load_image, to_gray
+from pcb_defect_detector.config import (
+    PCBDetectionPipelineConfigs,
+    RegistrationAlgorithm
+)
+from pcb_defect_detector.defect import Defect
+from pcb_defect_detector.defect_classifier import DefectClassifier
+from pcb_defect_detector.defect_finder import PCBDefectFinder
+from pcb_defect_detector.image_registration import (
+    ImageRegistrator,
+    apply_transformation
+)
+from pcb_defect_detector.result_writer import ResultSet, ResultWriter
+from pcb_defect_detector.utils import load_image, to_gray
 
-OUTPUT_DIR = Path(__file__).resolve().parent.parent / "output"
+OUTPUT_DIR = Path(__file__).resolve().parents[2] / "output"
 """ Diretório onde as imagens de resultado são gravadas """
 
 

@@ -1,7 +1,10 @@
 import cv2
 import numpy as np
 
-from config import ImageRegistrationConfig, RegistrationAlgorithm
+from pcb_defect_detector.config import (
+    ImageRegistrationConfig,
+    RegistrationAlgorithm
+)
 
 
 class ImageRegistrator:

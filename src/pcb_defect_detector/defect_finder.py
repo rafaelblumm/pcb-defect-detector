@@ -3,8 +3,8 @@ from typing import List
 import cv2
 import numpy as np
 
-from config import DefectFinderConfigs
-from defect import Defect, DefectBox
+from pcb_defect_detector.config import DefectFinderConfigs
+from pcb_defect_detector.defect import Defect, DefectBox
 
 
 class PCBDefectFinder:
